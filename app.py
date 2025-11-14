@@ -4,14 +4,6 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 
-# ------------------------------
-# Load New Numeric Stress Model
-# ------------------------------
-model = joblib.load("stress_model.joblib")
-scaler = joblib.load("stress_scaler.joblib")
-
-st.write("Scaler expects these features:", list(scaler.feature_names_in_))
-
 st.set_page_config(
     page_title="Student Stress Dashboard",
     page_icon="📊",
@@ -19,17 +11,22 @@ st.set_page_config(
 )
 
 # ------------------------------
+# Load the classification model (Low/Moderate/High)
+# ------------------------------
+model = joblib.load("stress_model.joblib")
+scaler = joblib.load("stress_scaler.joblib")
+
+# ------------------------------
 # Sidebar Navigation
 # ------------------------------
 st.sidebar.title("📌 Navigation")
 page = st.sidebar.radio("Go to", ["Dashboard", "Predict Single Student", "Report"])
 
-
-# =====================================================
-# 🟦 PAGE 1 — DASHBOARD (UPLOAD CSV & PREDICT ALL)
-# =====================================================
+# ------------------------------
+# Page 1: Dashboard (Full Dataset)
+# ------------------------------
 if page == "Dashboard":
-    st.title("📊 Student Stress Analysis Dashboard")
+    st.title("📊 Student Stress Category Prediction")
 
     uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=["csv"])
 
@@ -40,160 +37,112 @@ if page == "Dashboard":
         st.dataframe(df)
 
         st.divider()
-        st.write("### 🔍 Predict Stress Level (1–100) for All Students")
+        st.write("### 🔍 Predict Stress Category (Low / Moderate / High)")
 
-        # Make a copy
-        df_encoded = df.copy()
-
-        # Mapping dictionaries
+        # ---------------------------
+        # Label Encoding (matches your dataset)
+        # ---------------------------
         mapping_study = {
-            "Less than 2 hours": 1,
-            "2-4 hours": 2,
-            "4-6 hours": 3,
-            "More than 6 hours": 4
+            "0-2 hrs": 1,
+            "3-5 hrs": 2,
+            "5-7 hrs": 3,
+            "7-9 hrs": 4
         }
 
         mapping_sleep = {
-            "Less than 4 hours": 1,
-            "4-6 hours": 2,
-            "6-8 hours": 3,
-            "More than 8 hours": 4
+            "5-6 hrs": 1,
+            "7-8 hrs": 2,
+            "9-10 hrs": 3
         }
 
-        mapping_stress = {"Low": 1, "Moderate": 2, "High": 3}
+        df_encoded = df.copy()
 
-        # Apply mapping
         df_encoded["Study Hours"] = df["Study Hours"].map(mapping_study)
         df_encoded["Sleep Hours"] = df["Sleep Hours"].map(mapping_sleep)
-        df_encoded["Stress"] = df["Stress"].map(mapping_stress)
 
-        # Select features needed by the model
-        features = df_encoded[
-            ["CGPA (Out of 10)", "Attendance Percentage", "Study Hours", "Sleep Hours", "Stress"]
-        ]
+        # Prepare features
+        features = df_encoded[["CGPA (Out of 10)", "Attendance Percentage",
+                               "Study Hours", "Sleep Hours"]]
 
-        # Scale + predict
         scaled = scaler.transform(features)
         predictions = model.predict(scaled)
 
-        df["Predicted Stress (1–100)"] = predictions
+        df["Predicted Stress Category"] = predictions
 
-        st.success("Predictions Completed!")
+        st.success("Prediction Completed!")
         st.dataframe(df)
 
         # ---------------------------
         # Chart
         # ---------------------------
-        st.subheader("📈 Stress Level Distribution")
+        st.subheader("📈 Stress Category Count")
 
         fig, ax = plt.subplots(figsize=(5, 5))
-        ax.hist(predictions, bins=10)
-        ax.set_xlabel("Stress Level")
-        ax.set_ylabel("Number of Students")
+        ax.hist(predictions, bins=3)
+        ax.set_xlabel("Stress Category")
+        ax.set_ylabel("Count")
         st.pyplot(fig)
 
-        # Download button
+        # Download updated CSV
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
             "⬇️ Download Predicted Dataset",
             csv,
-            "predicted_stress.csv",
+            "predicted_stress_categories.csv",
             "text/csv"
         )
 
     else:
         st.info("Please upload a CSV file to begin.")
 
-
-
-# =====================================================
-# 🟩 PAGE 2 — PREDICT A SINGLE STUDENT
-# =====================================================
+# ------------------------------
+# Page 2: Predict Single Student
+# ------------------------------
 elif page == "Predict Single Student":
+    st.title("🎯 Predict Stress Category for One Student")
 
-    st.title("🧠 Predict Stress for One Student (1–100)")
+    cgpa = st.number_input("CGPA (out of 10)", 0.0, 10.0, 7.0)
+    attendance = st.number_input("Attendance Percentage", 0, 100, 75)
 
-    col1, col2 = st.columns(2)
+    study = st.selectbox("Study Hours", ["0-2 hrs", "3-5 hrs", "5-7 hrs", "7-9 hrs"])
+    sleep = st.selectbox("Sleep Hours", ["5-6 hrs", "7-8 hrs", "9-10 hrs"])
 
-    # Inputs
-    with col1:
-        cgpa = st.number_input("CGPA (Out of 10)", 0.0, 10.0, step=0.1)
-        attendance = st.number_input("Attendance Percentage", 0.0, 100.0, step=1.0)
+    mapping_study = {"0-2 hrs": 1, "3-5 hrs": 2, "5-7 hrs": 3, "7-9 hrs": 4}
+    mapping_sleep = {"5-6 hrs": 1, "7-8 hrs": 2, "9-10 hrs": 3}
 
-    with col2:
-        study_hours = st.selectbox(
-            "Study Hours",
-            ["Less than 2 hours", "2-4 hours", "4-6 hours", "More than 6 hours"]
-        )
-        sleep_hours = st.selectbox(
-            "Sleep Hours",
-            ["Less than 4 hours", "4-6 hours", "6-8 hours", "More than 8 hours"]
-        )
-        stress_prev = st.selectbox(
-            "Previous Stress Level (Self-Reported)",
-            ["Low", "Moderate", "High"]
-        )
+    if st.button("Predict"):
+        X = [[cgpa, attendance, mapping_study[study], mapping_sleep[sleep]]]
+        X_scaled = scaler.transform(X)
+        pred = model.predict(X_scaled)[0]
 
-    # Reuse mappings from training
-    mapping_study = {
-        "Less than 2 hours": 1,
-        "2-4 hours": 2,
-        "4-6 hours": 3,
-        "More than 6 hours": 4
-    }
-    mapping_sleep = {
-        "Less than 4 hours": 1,
-        "4-6 hours": 2,
-        "6-8 hours": 3,
-        "More than 8 hours": 4
-    }
-    mapping_stress = {"Low": 1, "Moderate": 2, "High": 3}
+        st.success(f"Predicted Stress Category: **{pred}**")
 
-    # Create input row
-    input_data = np.array([[
-        cgpa,
-        attendance,
-        mapping_study[study_hours],
-        mapping_sleep[sleep_hours],
-        mapping_stress[stress_prev]
-    ]])
-
-    # Scale input
-    scaled_input = scaler.transform(input_data)
-
-    # Predict
-    if st.button("🎯 Predict Stress"):
-        result = model.predict(scaled_input)[0]
-        st.success(f"🔥 Predicted Stress Level: **{int(result)} / 100**")
-
-
-
-# =====================================================
-# 🟨 PAGE 3 — REPORT PAGE
-# =====================================================
+# ------------------------------
+# Page 3: Report Page
+# ------------------------------
 elif page == "Report":
-
-    st.title("📄 Project Report – Student Stress Prediction")
+    st.title("📄 Project Report – Stress Category Prediction")
 
     st.write("""
     ### Project Overview  
-    This dashboard predicts student stress levels on a **1–100 numeric scale** using a trained machine learning model.
+    This dashboard predicts student stress levels as **Low, Moderate, or High** using a trained classification model.
 
     ### Inputs Used
     - CGPA  
     - Attendance  
     - Study Hours  
     - Sleep Hours  
-    - Self-reported stress (Low/Moderate/High)
 
     ### Output  
-    A continuous stress score between **1 and 100**, indicating the student's estimated stress intensity.
+    - Stress Category: **Low / Moderate / High**
 
     ### Applications  
-    - Early identification of high-stress students  
-    - Academic counselling support  
-    - Wellness monitoring  
+    - Identifying high-stress students  
+    - Academic support planning  
+    - Counseling and well-being improvement  
     """)
+
+
 
 
 
