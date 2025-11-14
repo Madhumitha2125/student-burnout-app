@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 # ------------------------------
 model = joblib.load("stress_model.joblib")
 scaler = joblib.load("stress_scaler.joblib")
+st.write("Scaler expects these features:", list(scaler.feature_names_in_))
 
 st.set_page_config(
     page_title="Student Stress Dashboard",
@@ -160,6 +161,7 @@ elif page == "Report":
     - Academic counselling support  
     - Wellness monitoring  
     """)
+
 
 
 
