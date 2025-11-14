@@ -1,172 +1,167 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 
-# --- PAGE CONFIGURATION ---
+# ------------------------------
+# Load New Numeric Stress Model
+# ------------------------------
+model = joblib.load("stress_model.joblib")
+scaler = joblib.load("stress_scaler.joblib")
+
 st.set_page_config(
-    page_title="🎓 Student Burnout Prediction Dashboard",
-    page_icon="🔥",
-    layout="wide",
+    page_title="Student Stress Dashboard",
+    page_icon="📊",
+    layout="wide"
 )
 
-# --- CUSTOM STYLES ---
-st.markdown("""
-    <style>
-        .main {
-            background-color: #F9FAFB;
-        }
-        div.block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 1.5rem;
-            padding-left: 3rem;
-            padding-right: 3rem;
-        }
-        h1, h2, h3 {
-            color: #1E3A8A;
-        }
-        .stButton>button {
-            background-color: #1E40AF;
-            color: white;
-            border-radius: 10px;
-            padding: 0.6rem 1.2rem;
-            border: none;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        .stButton>button:hover {
-            background-color: #3B82F6;
-            color: white;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# ------------------------------
+# Sidebar Navigation
+# ------------------------------
+st.sidebar.title("📌 Navigation")
+page = st.sidebar.radio("Go to", ["Dashboard", "Predict Single Student", "Report"])
 
-# --- TITLE SECTION ---
-st.title("🎓 Student Burnout Prediction Dashboard")
-st.markdown("### Analyze, Predict, and Visualize Student Burnout Trends")
+# ------------------------------
+# Page 1: Dashboard (Full Dataset)
+# ------------------------------
+if page == "Dashboard":
+    st.title("📊 Student Stress Analysis Dashboard")
 
-# Load Model & Scaler
-model = joblib.load("burnout_model.joblib")
-scaler = joblib.load("scaler.joblib")
+    uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=["csv"])
 
-# --- TABS LAYOUT ---
-tabs = st.tabs(["📈 Dashboard", "🧠 Predict New Student", "📊 Dataset Insights"])
-
-# ========================
-# 📈 TAB 1: Dashboard View
-# ========================
-with tabs[0]:
-    st.header("🔥 Predict Burnout for Uploaded Dataset")
-
-    uploaded_file = st.file_uploader("Upload Student Dataset (CSV)", type=["csv"])
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        st.success("✅ Dataset loaded successfully!")
-        st.dataframe(df.head())
+        st.success("Dataset Loaded Successfully!")
+        st.write("### Preview of Dataset")
+        st.dataframe(df)
 
-        try:
-            df_encoded = pd.get_dummies(df, columns=["Study Hours", "Sleep Hours", "Stress"], drop_first=False)
-            for col in scaler.feature_names_in_:
-                if col not in df_encoded.columns:
-                    df_encoded[col] = 0
-            df_encoded = df_encoded[scaler.feature_names_in_]
+        st.divider()
+        st.write("### 🔍 Predict Stress Level (1–100) for All Students")
 
-            scaled = scaler.transform(df_encoded)
-            predictions = model.predict(scaled)
-            burnout_labels = {0: "Low", 1: "Medium", 2: "High"}
-            df["Predicted Burnout Level"] = [burnout_labels[p] for p in predictions]
+        # ---------------------------
+        # Convert Categorical Inputs
+        # ---------------------------
+        df_encoded = df.copy()
 
-            st.success("✅ Predictions completed successfully!")
-            st.dataframe(df)
+        # Map Study Hours
+        mapping_study = {
+            "Less than 2 hours": 1,
+            "2-4 hours": 2,
+            "4-6 hours": 3,
+            "More than 6 hours": 4
+        }
 
-            # Burnout level distribution
-            counts = df["Predicted Burnout Level"].value_counts()
+        # Map Sleep Hours
+        mapping_sleep = {
+            "Less than 4 hours": 1,
+            "4-6 hours": 2,
+            "6-8 hours": 3,
+            "More than 8 hours": 4
+        }
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 🔹 Burnout Level Distribution")
-                st.bar_chart(counts)
+        # Map Stress Level
+        mapping_stress = {"Low": 1, "Moderate": 2, "High": 3}
 
-            with col2:
-                fig, ax = plt.subplots()
-                ax.pie(counts, labels=counts.index, autopct="%1.1f%%", startangle=90, colors=["#60A5FA", "#FACC15", "#F87171"])
-                ax.set_title("Burnout Percentage Breakdown")
-                st.pyplot(fig)
+        df_encoded["Study Hours"] = df["Study Hours"].map(mapping_study)
+        df_encoded["Sleep Hours"] = df["Sleep Hours"].map(mapping_sleep)
+        df_encoded["Stress"] = df["Stress"].map(mapping_stress)
 
-            # Download option
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Download Predictions as CSV",
-                data=csv,
-                file_name="student_burnout_predictions.csv",
-                mime="text/csv",
-            )
+        # ---------------------------
+        # Prepare features
+        # ---------------------------
+        features = df_encoded[["CGPA (Out of 10)", "Attendance Percentage", "Study Hours", "Sleep Hours", "Stress"]]
 
-        except Exception as e:
-            st.error(f"❌ Error during prediction: {e}")
+        scaled = scaler.transform(features)
+        predictions = model.predict(scaled)
+
+        df["Predicted Stress (1–100)"] = predictions
+
+        st.success("Predictions Completed!")
+        st.dataframe(df)
+
+        # ---------------------------
+        # Charts
+        # ---------------------------
+        st.subheader("📈 Stress Level Distribution")
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.hist(predictions, bins=10)
+        ax.set_xlabel("Stress Level")
+        ax.set_ylabel("Number of Students")
+        st.pyplot(fig)
+
+        # Download updated CSV
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download Predicted Dataset",
+            csv,
+            "predicted_stress.csv",
+            "text/csv"
+        )
+
     else:
-        st.info("📤 Please upload your dataset to begin.")
+        st.info("Please upload a CSV file to begin.")
 
-# ========================
-# 🧠 TAB 2: Predict Single
-# ========================
-with tabs[1]:
-    st.header("🧠 Predict a Single Student’s Burnout Level")
+# ------------------------------
+# Page 2: Predict Single Student
+# ------------------------------
+elif page == "Predict Single Student":
+    st.title("🧠 Predict Stress for One Student (1–100)")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
+
     with col1:
-        study_hours = st.selectbox("📘 Study Hours per day", ["Less than 2 hours", "2-4 hours", "4-6 hours", "More than 6 hours"])
-        sleep_hours = st.selectbox("💤 Sleep Hours per day", ["Less than 4 hours", "4-6 hours", "6-8 hours", "More than 8 hours"])
+        cgpa = st.number_input("CGPA (Out of 10)", min_value=0.0, max_value=10.0, step=0.1)
+        attendance = st.number_input("Attendance Percentage", min_value=0.0, max_value=100.0, step=1.0)
+
     with col2:
-        stress = st.selectbox("😣 Stress Level", ["Low", "Moderate", "High"])
-        cgpa = st.number_input("🎯 CGPA (Out of 10)", min_value=0.0, max_value=10.0, step=0.1)
-    with col3:
-        attendance = st.number_input("🧾 Attendance (%)", min_value=0.0, max_value=100.0, step=0.1)
+        study_hours = st.selectbox("Study Hours", ["Less than 2 hours", "2-4 hours", "4-6 hours", "More than 6 hours"])
+        sleep_hours = st.selectbox("Sleep Hours", ["Less than 4 hours", "4-6 hours", "6-8 hours", "More than 8 hours"])
+        stress_prev = st.selectbox("Previous Stress Level (Self-Reported)", ["Low", "Moderate", "High"])
 
-    input_df = pd.DataFrame({
-        "CGPA (Out of 10)": [cgpa],
-        "Attendance Percentage": [attendance],
-        "Study Hours_0": [1 if study_hours == "Less than 2 hours" else 0],
-        "Study Hours_1": [1 if study_hours == "2-4 hours" else 0],
-        "Study Hours_2": [1 if study_hours == "4-6 hours" else 0],
-        "Sleep Hours_0": [1 if sleep_hours == "Less than 4 hours" else 0],
-        "Sleep Hours_1": [1 if sleep_hours == "4-6 hours" else 0],
-        "Sleep Hours_2": [1 if sleep_hours == "6-8 hours" else 0],
-        "Stress_0": [1 if stress == "Low" else 0],
-        "Stress_1": [1 if stress == "Moderate" else 0],
-        "Stress_2": [1 if stress == "High" else 0],
-    })
+    mapping_study = {"Less than 2 hours": 1, "2-4 hours": 2, "4-6 hours": 3, "More than 6 hours": 4}
+    mapping_sleep = {"Less than 4 hours": 1, "4-6 hours": 2, "6-8 hours": 3, "More than 8 hours": 4}
+    mapping_stress = {"Low": 1, "Moderate": 2, "High": 3}
 
-    scaled = scaler.transform(input_df)
-    if st.button("🎯 Predict Burnout Level"):
-        prediction = model.predict(scaled)
-        burnout_class = {0: "Low", 1: "Medium", 2: "High"}
-        st.success(f"🔥 Predicted Burnout Level: **{burnout_class[prediction[0]]}**")
+    input_data = np.array([[cgpa, attendance,
+                            mapping_study[study_hours],
+                            mapping_sleep[sleep_hours],
+                            mapping_stress[stress_prev]]])
 
-# ========================
-# 📊 TAB 3: Insights Page
-# ========================
-with tabs[2]:
-    st.header("📊 Dataset Insights & Trends")
-    st.markdown("Upload your CSV file to view data trends and summary statistics.")
-    file = st.file_uploader("Upload CSV for Insights", type=["csv"], key="insights_upload")
+    scaled_input = scaler.transform(input_data)
 
-    if file:
-        data = pd.read_csv(file)
-        st.success("✅ File uploaded!")
-        st.write(data.describe())
+    if st.button("🎯 Predict Stress"):
+        result = model.predict(scaled_input)[0]
+        st.success(f"🔥 Predicted Stress Level: **{int(result)} / 100**")
 
-        st.markdown("### 🔍 Correlation Heatmap (Numerical Features)")
-        numeric_data = data.select_dtypes(include=['float64', 'int64'])
-        if not numeric_data.empty:
-            st.dataframe(numeric_data.corr())
-        else:
-            st.warning("No numeric data found.")
-    else:
-        st.info("Please upload a dataset to explore insights.")
+# ------------------------------
+# Page 3: Report Page
+# ------------------------------
+elif page == "Report":
+    st.title("📄 Project Report – Student Stress Prediction")
 
-# --- FOOTER ---
-st.markdown("---")
-st.caption("Developed by Madhu Mitha 💻 | Powered by Streamlit | Enhanced Dashboard UI ✨")
+    st.write("""
+    ### Project Overview  
+    This dashboard predicts student stress levels on a **1–100 numeric scale** using a trained machine learning model.
+
+    ### Inputs Used
+    - CGPA  
+    - Attendance  
+    - Study Hours  
+    - Sleep Hours  
+    - Self-reported stress (Low/Moderate/High)
+
+    ### Output  
+    - A continuous stress score between **1 and 100**, indicating the student's estimated stress intensity.
+
+    ### Applications  
+    - Early identification of high-stress students  
+    - Academic counselling support  
+    - Wellness monitoring  
+    """)
+
+
+
 
 
